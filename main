@@ -1,0 +1,49 @@
+import os, datetime, requests, pandas as pd
+import akshare as ak
+
+WEBHOOK = os.getenv("WEBHOOK_URL")
+
+def fetch_top3():
+    df = ak.stock_zh_a_spot_em()
+    df = df[~df['名称'].str.contains('ST')]
+    df = df[df['代码'].str.match(r'^(600|601|603|605|000|001)')]
+    df['涨跌幅'] = pd.to_numeric(df['涨跌幅'], errors='coerce')
+    top3 = df.sort_values('涨跌幅', ascending=False).head(3)[['代码','名称','涨跌幅','最新价','开盘','量比','总市值']]
+    return top3
+
+def build_html(top3):
+    today = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>早盘竞价Top3</title>
+    <style>body{{font-family:Arial;}} table{{border-collapse:collapse;width:100%;}}
+    th,td{{border:1px solid #ddd;padding:8px;text-align:center;}}
+    th{{background:#f44336;color:white;}}</style></head>
+    <body><h2>早盘竞价Top 3（更新:{today}）</h2>
+    {top3.to_html(index=False)}
+    </body></html>"""
+    os.makedirs('docs', exist_ok=True)
+    with open('docs/index.html','w',encoding='utf-8') as f:
+        f.write(html)
+
+def send_wechat(top3, html_url):
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    lines = [f"【今日竞价选股Top 3】（{today}）"]
+    for idx,row in top3.reset_index(drop=True).iterrows():
+        lines.append(f"{idx+1}. {row['名称']}（{row['代码']}）\\n   涨幅：{row['涨跌幅']}%\\n   最新价：{row['最新价']}")
+    lines.append(f"\\n🔗详情：{html_url}")
+    payload = {"msgtype":"markdown","markdown":{"content":"\\n".join(lines)}}
+    r = requests.post(WEBHOOK, json=payload, timeout=10)
+    r.raise_for_status()
+
+def main():
+    top3 = fetch_top3()
+    build_html(top3)
+    repo = os.getenv('GITHUB_REPOSITORY', '')
+    if '/' in repo:
+        user, repo_name = repo.split('/',1)
+        html_url = f"https://{user}.github.io/{repo_name}/"
+    else:
+        html_url = ''
+    send_wechat(top3, html_url)
+
+if __name__ == "__main__":
+    main()
