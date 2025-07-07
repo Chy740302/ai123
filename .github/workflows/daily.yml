@@ -1,0 +1,33 @@
+name: daily-stock-picker
+
+on:
+  schedule:
+    - cron: '26 1 * * 1-5'  # 每个交易日北京时间 09:26 执行
+  workflow_dispatch:        # 支持手动触发
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run script
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: python main.py
+
+      - name: Commit generated HTML
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add docs/index.html
+          git commit -m "update html"
+          git push
